@@ -1,46 +1,61 @@
-from fastapi import APIRouter
-from app.schemas import User
+from fastapi import APIRouter,Depends
+from app.schemas import User,ShowUser,UpdateUser
+from app.db.database import get_db
+from sqlalchemy.orm import Session
+from app.db import models
+from typing import List
 
 router = APIRouter(
     prefix="/user",
     tags=["Users"]
 )
 
-users = []
-
-@router.get("/")
-def get_users():
-    return users
+@router.get("/",response_model=List[ShowUser])
+def get_users(db:Session = Depends(get_db)):
+    data = db.query(models.User).all()
+    return data
 
 @router.post("/")
-def create_user(user:User):
+def create_user(user:User,db:Session = Depends(get_db)):
     user = user.dict()
-    users.append(user)
+    new_user = models.User(
+        name=user["name"],
+        username=user["username"],
+        password=user["password"],
+        phone=user["phone"],
+        user_creation=user["user_creation"],
+        email=user["email"],
+        status=user["status"],
+        observations=user["observations"]
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
     print(user)
     return {"Notification":"User created succesfully"}
 
-@router.get("/{user_id}")
-def get_user(user_id:int):
-    for user in users:
-        print(user,type(user))
-        if user["id"] == user_id:
-            return {"user":user}
-    return {"Notification":"User not found"}
+@router.get("/{id}",response_model=ShowUser)
+def get_user(id:int,db:Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == id).first()
+    if not user:
+        return {"Notification":"User not found"}
+    return user
 
-@router.delete("/{user_id}")
-def delete_user(user_id:int):
-    for index,user in enumerate(usuarios):
-        if user["id"]==user_id:
-            users.pop(index)
-            return {"Notification":"User deleted succesfully"}
-    return {"Notification":"User not found or does not exists"}
+@router.delete("/{id}")
+def delete_user(id:int,db:Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == id)
+    if not user.first():
+        return {"Notification":"User not found or does not exists"}
+    user.delete(synchronize_session=False)
+    db.commit()
+    return {"Notification":"User deleted succesfully"}
 
-@router.put("/{user_id}")
-def update_user(user_id:int,updateUser:User):
-    for index,user in enumerate(users):
-        if user["id"] == user_id:
-            users[index]["title"] = updateUser.dict()["title"]
-            users[index]["content"] = updateUser.dict()["content"]
-            users[index]["author"] = updateUser.dict()["author"]
-            return {"Notification":"User updated succesfully"}
-    return {"Notification":"User not found or does not exists"}
+@router.patch("/{id}")
+def update_user(id:int,updateUser:UpdateUser,db:Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == id)
+    if not user.first():
+        return {"Notification":"User not found or does not exists"}
+    user.update(updateUser.dict(exclude_unset=True))
+    db.commit()
+    return {"Notification":"User updated succesfully"}
+    
